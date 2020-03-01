@@ -1,0 +1,90 @@
+version: '3'
+services:
+  nest-app-web:
+    build: ./node
+    ports:
+    - "3030:3000"
+    volumes:
+    - ./engagika_backend_nestjs:/workspace/engagika_backend_nestjs
+    - ./logs:/workspace/logs
+    working_dir: /workspace/engagika_backend_nestjs
+    command: sh -c "npm install --verbose && npm run start:dev > /workspace/logs/engagika_nest_log.txt"
+    extra_hosts:
+      - "engagika.com:172.26.0.5"
+    links:
+    - nest-app-db
+    - php
+    tty: true
+    networks:
+      engagika_network:
+        ipv4_address: 172.26.0.3
+
+  nest-app-db:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      MYSQL_USER: "root"
+      MYSQL_PASSWORD: "root"
+      MYSQL_DATABASE: "engagika_db"
+      TZ: "UTC"
+    command: mysqld --sql_mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+    ports:
+    - 13306:3306
+    volumes:
+      - ./mysql_5_7:/var/lib/mysql
+    networks:
+      engagika_network:
+        ipv4_address: 172.26.0.4
+
+  webserver:
+    build: ./webserver
+    links:
+      - nest-app-db
+      - redis
+
+  #beanstalkd:
+  #  build: ./beanstalkd
+  #  networks:
+  #    engagika_network:
+  #      ipv4_address: 172.26.0.6
+
+  php:
+    build: ./php
+    ports:
+      - '80:80'
+      - '1080:1080'
+    volumes:
+      - c:/var/log/apache2:/var/log/apache2
+      - ./engagika_backend_laravel:/var/www/html/engagika_backend_laravel
+    depends_on:
+      - webserver
+    links:
+      - nest-app-db
+    networks:
+      engagika_network:
+        ipv4_address: 172.26.0.5
+
+  redis:
+    image: 'bitnami/redis:5.0'
+    environment:
+      # ALLOW_EMPTY_PASSWORD is recommended only for development.
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
+    ports:
+      - '6379:6379'
+    volumes:
+      - 'redis_data:/bitnami/redis/data'
+    networks:
+      engagika_network:
+        ipv4_address: 172.26.0.6
+
+networks:
+    engagika_network:
+        ipam:
+            driver: default
+            config:
+                - subnet: 172.26.0.0/16
+
+volumes:
+  redis_data:
+    driver: local
